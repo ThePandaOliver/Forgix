@@ -27,10 +27,10 @@ public abstract class MergeVersionsTask extends Jar {
             archiveBaseName.set(multiversion.archiveBaseName);
             archiveClassifier.set(multiversion.archiveClassifier);
             archiveVersion.set(multiversion.archiveVersion);
-            destinationDirectory.set(multiversion.destinationDirectory.get());
+            destinationDirectory.set(multiversion.getDestinationDirectory());
 
             // Set up input files
-            inputJarFiles.setFrom(multiversion.inputJars.get());
+            inputJarFiles.setFrom(multiversion.getInputJars());
         }
     }
 
