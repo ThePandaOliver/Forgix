@@ -108,12 +108,29 @@ pluginBundle {
 }
 
 publishing {
+	publications {
+		pluginMaven(MavenPublication) {
+			artifactId = "forgix"
+		}
+	}
+
     repositories {
         maven {
             name = 'localPluginRepository'
             url = '../local-plugin-repository'
         }
     }
+
+	repositories {
+		maven {
+			name = "Github"
+			url = "https://maven.pkg.github.com/ThePandaOliver/Forgix"
+			credentials {
+				username = System.getenv("GITHUB_USER")
+				password = System.getenv("GITHUB_API_TOKEN")
+			}
+		}
+	}
 }
 
 tasks.withType(GenerateModuleMetadata).configureEach {
