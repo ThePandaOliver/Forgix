@@ -1,5 +1,6 @@
 package io.github.pacifistmc.forgix.core;
 
+import com.google.gson.*;
 import io.github.pacifistmc.forgix.utils.JAR;
 import io.github.pacifistmc.forgix.utils.TinyClassWriter;
 import net.fabricmc.tinyremapper.*;
@@ -22,220 +23,271 @@ import java.util.jar.JarFile;
  * Relocates conflicting files in JARs.
  */
 public class Relocator {
-    private static final File tempDir = Files.createTempDirectory("forgix-tiny").toFile();
-    static {
-        tempDir.mustDeleteOnExit();
-    }
+	private static final File tempDir = Files.createTempDirectory("forgix-tiny").toFile();
 
-    /**
-     * Relocates conflicting files in JARs.
-     * @param relocationConfigs The relocationConfigs to process
-     */
-    public static void relocate(List<RelocationConfig> relocationConfigs) {
-        relocateClasses(relocationConfigs);
-        relocateResources(relocationConfigs);
-    }
+	static {
+		tempDir.mustDeleteOnExit();
+	}
 
-    /**
-     * Relocates conflicting classes in JARs.
-     * @param relocationConfigs The relocationConfigs to process
-     */
-    private static final Map<JarFile, Map<String, String>> mappingsSnapshot = new ConcurrentHashMap<>(); // Store a snapshot of the mappings so we can restore it at the end of all passes
-    public static void relocateClasses(List<RelocationConfig> relocationConfigs, boolean doAnotherPass = false) {
-        if (doAnotherPass || relocationConfigs.getFirst().tinyFile == null) generateMappings(relocationConfigs, !doAnotherPass); // Generate mappings if they don't exist
+	/**
+	 * Relocates conflicting files in JARs.
+	 *
+	 * @param relocationConfigs The relocationConfigs to process
+	 */
+	public static void relocate(List<RelocationConfig> relocationConfigs) {
+		relocateClasses(relocationConfigs);
+		relocateResources(relocationConfigs);
+	}
 
-        // Return if there are no new conflicts (no new class conflicts)
-        // This will return if there are no conflicts at all (empty mappings) or there are only resource conflicts which we're ignoring
-        if (doAnotherPass && relocationConfigs.parallelStream()
-                .flatMap(config -> config.getMappings().keySet().parallelStream())
-                .noneMatch(mapping -> mapping.endsWith(".class"))
-        ) {
-            relocationConfigs.parallelStream().forEach(config -> config.setMappings(mappingsSnapshot.get(config.getJarFile())));
-            return;
-        }
+	/**
+	 * Relocates conflicting classes in JARs.
+	 *
+	 * @param relocationConfigs The relocationConfigs to process
+	 */
+	private static final Map<JarFile, Map<String, String>> mappingsSnapshot = new ConcurrentHashMap<>(); // Store a snapshot of the mappings so we can restore it at the end of all passes
 
-        // Process each JAR file in parallel
-        relocationConfigs.parallelStream().forEach(relocationConfig -> {
-            // Update mapping snapshot, merge with existing ones
-            // TODO: Make mappingsSnapshot faster, relocateResources needs access to class mappings and
-            //  doing multiple passes of class relocation resets the mappings so we need to store a snapshot of the mappings
-            //  in order to restore them at the end of all passes
-            mappingsSnapshot.computeIfAbsent(relocationConfig.getJarFile(), _ -> new ConcurrentHashMap<>());
-            mappingsSnapshot.computeIfPresent(relocationConfig.getJarFile(), (_, existingMap) -> {
-                existingMap.putAll(relocationConfig.mappings);
-                return existingMap;
-            });
+	public static void relocateClasses(List<RelocationConfig> relocationConfigs, boolean doAnotherPass=false) {
+		if (doAnotherPass || relocationConfigs.getFirst().tinyFile == null)
+			generateMappings(relocationConfigs, !doAnotherPass); // Generate mappings if they don't exist
 
-            // Create a tiny remapper with the mappings
-            IMappingProvider tinyMappings = TinyUtils.createTinyMappingProvider(relocationConfig.tinyFile.toPath(), "original", "relocated");
-            var logger = new ConsoleLogger(); logger.setLevel(TrLogger.Level.ERROR);
-            TinyRemapper tinyRemapper = TinyRemapper.newRemapper(logger).withMappings(tinyMappings).ignoreConflicts(true).fixPackageAccess(true).renameInvalidLocals(true).rebuildSourceFilenames(true).resolveMissing(true).build();
+		// Return if there are no new conflicts (no new class conflicts)
+		// This will return if there are no conflicts at all (empty mappings) or there are only resource conflicts which we're ignoring
+		if (doAnotherPass && relocationConfigs.parallelStream()
+				.flatMap(config -> config.getMappings().keySet().parallelStream())
+				.noneMatch(mapping -> mapping.endsWith(".class"))
+		) {
+			relocationConfigs.parallelStream().forEach(config -> config.setMappings(mappingsSnapshot.get(config.getJarFile())));
+			return;
+		}
 
-            // Get the paths
-            Path jarFilePath = Paths.get(relocationConfig.jarFile.getName());
-            Path tempJarFilePath = Paths.get(relocationConfig.jarFile.getName().setExtension("tmp"));
+		// Process each JAR file in parallel
+		relocationConfigs.parallelStream().forEach(relocationConfig -> {
+			// Update mapping snapshot, merge with existing ones
+			// TODO: Make mappingsSnapshot faster, relocateResources needs access to class mappings and
+			//  doing multiple passes of class relocation resets the mappings so we need to store a snapshot of the mappings
+			//  in order to restore them at the end of all passes
+			mappingsSnapshot.computeIfAbsent(relocationConfig.getJarFile(), _ -> new ConcurrentHashMap<>());
+			mappingsSnapshot.computeIfPresent(relocationConfig.getJarFile(), (_, existingMap) -> {
+				existingMap.putAll(relocationConfig.mappings);
+				return existingMap;
+			});
 
-            try (OutputConsumerPath outputConsumer = new OutputConsumerPath.Builder(tempJarFilePath).assumeArchive(true).build()) {
-                // Add the jar file as a target
-                outputConsumer.addNonClassFiles(jarFilePath);
-                tinyRemapper.readInputs(jarFilePath);
+			// Create a tiny remapper with the mappings
+			IMappingProvider tinyMappings = TinyUtils.createTinyMappingProvider(relocationConfig.tinyFile.toPath(), "original", "relocated");
+			var logger = new ConsoleLogger();
+			logger.setLevel(TrLogger.Level.ERROR);
+			TinyRemapper tinyRemapper = TinyRemapper.newRemapper(logger).withMappings(tinyMappings).ignoreConflicts(true).fixPackageAccess(true).renameInvalidLocals(true).rebuildSourceFilenames(true).resolveMissing(true).build();
 
-                // Apply the mappings
-                tinyRemapper.apply(outputConsumer);
-            } finally {
-                tinyRemapper.finish(); // Close the remapper
-            }
+			// Get the paths
+			Path jarFilePath = Paths.get(relocationConfig.jarFile.getName());
+			Path tempJarFilePath = Paths.get(relocationConfig.jarFile.getName().setExtension("tmp"));
 
-            // Close the original JAR file
-            relocationConfig.jarFile.close();
+			try (OutputConsumerPath outputConsumer = new OutputConsumerPath.Builder(tempJarFilePath).assumeArchive(true).build()) {
+				// Add the jar file as a target
+				outputConsumer.addNonClassFiles(jarFilePath);
+				tinyRemapper.readInputs(jarFilePath);
 
-            // Replace the original JAR file with the relocated one
-            Files.move(tempJarFilePath, jarFilePath, StandardCopyOption.REPLACE_EXISTING); // TODO: Probably don't overwrite, update the jar location in relocation config instead. FIXME: Trying to update the jar location gives so many lambda bootstrap errors due to how cursed manifold is 😭
-        });
+				// Apply the mappings
+				tinyRemapper.apply(outputConsumer);
+			} finally {
+				tinyRemapper.finish(); // Close the remapper
+			}
 
-        // Do multiple passes to handle possible conflicts created by the previous pass
-        // Example:
-        // ```
-        // class A {
-        //     public static Object get() {
-        //         return Minecraft.getInstance();
-        //     }
-        // }
-        // class B {
-        //     public static void use() {
-        //         System.out.println(A.get());
-        //     }
-        // }
-        // ```
-        // A will get remapped to `fabric.A` and `forge.A`, which will B call?
-        relocateClasses(relocationConfigs, true);
-    }
+			// Close the original JAR file
+			relocationConfig.jarFile.close();
 
-    /**
-     * Relocates conflicting resources in JARs.
-     * @param relocationConfigs The relocationConfigs to process
-     */
-    public static void relocateResources(List<RelocationConfig> relocationConfigs, boolean anotherPass = false) {
-        // Generate mappings if they don't exist or this is another pass
-        if (anotherPass || relocationConfigs.getFirst().tinyFile == null) generateMappings(relocationConfigs, !anotherPass);
+			// Replace the original JAR file with the relocated one
+			Files.move(tempJarFilePath, jarFilePath, StandardCopyOption.REPLACE_EXISTING); // TODO: Probably don't overwrite, update the jar location in relocation config instead. FIXME: Trying to update the jar location gives so many lambda bootstrap errors due to how cursed manifold is 😭
+		});
 
-        // Return if there are no new conflicts
+		// Do multiple passes to handle possible conflicts created by the previous pass
+		// Example:
+		// ```
+		// class A {
+		//     public static Object get() {
+		//         return Minecraft.getInstance();
+		//     }
+		// }
+		// class B {
+		//     public static void use() {
+		//         System.out.println(A.get());
+		//     }
+		// }
+		// ```
+		// A will get remapped to `fabric.A` and `forge.A`, which will B call?
+		relocateClasses(relocationConfigs, true);
+	}
+
+	/**
+	 * Relocates conflicting resources in JARs.
+	 *
+	 * @param relocationConfigs The relocationConfigs to process
+	 */
+	public static void relocateResources(List<RelocationConfig> relocationConfigs, boolean anotherPass=false) {
+		// Generate mappings if they don't exist or this is another pass
+		if (anotherPass || relocationConfigs.getFirst().tinyFile == null) generateMappings(relocationConfigs, !anotherPass);
+
+		// Return if there are no new conflicts
 //        if (anotherPass && relocationConfigs.stream().allMatch(config -> config.mappings.isEmpty())) return;
-        // This will return if there are no conflicts at all (empty mappings) or there are only class and/or META-INF conflicts which we're ignoring
-        if (anotherPass && relocationConfigs.stream()
-                .flatMap(config -> config.mappings.keySet().stream())
-                .noneMatch(mapping -> !mapping.endsWith(".class") && !mapping.startsWith("META-INF/")) // Checking to see if there's any resource that isn't a class or META-INF, if there isn't then return
-        ) return;
+		// This will return if there are no conflicts at all (empty mappings) or there are only class and/or META-INF conflicts which we're ignoring
+		if (anotherPass && relocationConfigs.stream()
+				.flatMap(config -> config.mappings.keySet().stream())
+				.noneMatch(mapping -> !mapping.endsWith(".class") && !mapping.startsWith("META-INF/")) // Checking to see if there's any resource that isn't a class or META-INF, if there isn't then return
+		) return;
 
-        AtomicBoolean doAnotherPass = new AtomicBoolean(false);
+		AtomicBoolean doAnotherPass = new AtomicBoolean(false);
 
-        // Process each JAR file in parallel
-        relocationConfigs.parallelStream().forEach(relocationConfig -> {
-            JarFile jarFile = JAR.isClosed(relocationConfig.jarFile) ? new JarFile(relocationConfig.jarFile.getName()) : relocationConfig.jarFile; // Reopen the JAR file if it's closed (it can be closed by the `relocateClasses` method)
+		// Process each JAR file in parallel
+		relocationConfigs.parallelStream().forEach(relocationConfig -> {
+			JarFile jarFile = JAR.isClosed(relocationConfig.jarFile) ? new JarFile(relocationConfig.jarFile.getName()) : relocationConfig.jarFile; // Reopen the JAR file if it's closed (it can be closed by the `relocateClasses` method)
 
-            Set<JarEntry> resources = JAR.getResources(jarFile);
-            Map<JarEntry, String> contentMapping = new HashMap<>();
+			Set<JarEntry> resources = JAR.getResources(jarFile);
+			Map<JarEntry, String> contentMapping = new HashMap<>();
 
-            // Create a map of conflicts with path alterations.
-            Map<Predicate<String>, Map<String, String>> conflicts = new HashMap<>();
-            Map<String, String> fileConflicts = new HashMap<>(); // Keep track of mixins to handle them specially
-            relocationConfig.mappings.forEach((originalPath, relocatedPath) -> {
-                if (originalPath.endsWith("META-INF/MANIFEST.MF")) return; // Skip manifest
-                if (!originalPath.endsWith(".class") && !originalPath.startsWith("META-INF/services/")) { // Is a regular file conflict
-                    fileConflicts.put(originalPath, relocatedPath);
-                }
-                // replacing with `removeExtension()` would make the ones with extensions be replaced which is what we want
-                conflicts.put(content -> content.contains(originalPath.removeExtension()), Map.of(originalPath.removeExtension(), relocatedPath.removeExtension())); // Add the original path without the .class extension // the predicate should be _ -> true but for some reason that doesn't work
-                conflicts.put(_ -> originalPath.contains("/"), Map.of(originalPath.removeExtension().replace('/', '.'), relocatedPath.removeExtension().replace('/', '.'))); // If it's in a directory, add the original path without the .class extension and with dots instead of slashes
-                conflicts.put(_ -> originalPath.contains("/"), Map.of(originalPath.removeExtension().replace('/', '\\'), relocatedPath.removeExtension().replace('/', '\\'))); // If it's in a directory, add the original path without the .class extension and with backslashes instead of slashes
-                if (originalPath.endsWith(".class")) { // Is a class conflict
-                    conflicts.put(content -> content.contains("\"${originalPath.getPath().replace('/', '.')}\""), // look for the path with dots and in quotes (for mixins), example: "com.example.mod.mixins"
-                            Map.of("\"${originalPath.getBaseName().removeExtension()}\"", "\"${relocatedPath.getBaseName().removeExtension()}\"")); // Just the filename without the path & extension and in quotes (for mixins)
-                }
-            });
+			// Create a map of conflicts with path alterations.
+			Map<Predicate<String>, Map<String, String>> conflicts = new HashMap<>();
+			Map<String, String> fileConflicts = new HashMap<>(); // Keep track of mixins to handle them specially
+			relocationConfig.mappings.forEach((originalPath, relocatedPath) -> {
+				if (originalPath.endsWith("META-INF/MANIFEST.MF")) return; // Skip manifest
+				if (!originalPath.endsWith(".class") && !originalPath.startsWith("META-INF/services/")) { // Is a regular file conflict
+					fileConflicts.put(originalPath, relocatedPath);
+				}
+				// replacing with `removeExtension()` would make the ones with extensions be replaced which is what we want
+				conflicts.put(content -> content.contains(originalPath.removeExtension()), Map.of(originalPath.removeExtension(), relocatedPath.removeExtension())); // Add the original path without the .class extension // the predicate should be _ -> true but for some reason that doesn't work
+				conflicts.put(_ -> originalPath.contains("/"), Map.of(originalPath.removeExtension().replace('/', '.'), relocatedPath.removeExtension().replace('/', '.'))); // If it's in a directory, add the original path without the .class extension and with dots instead of slashes
+				conflicts.put(_ -> originalPath.contains("/"), Map.of(originalPath.removeExtension().replace('/', '\\'), relocatedPath.removeExtension().replace('/', '\\'))); // If it's in a directory, add the original path without the .class extension and with backslashes instead of slashes
+				if (originalPath.endsWith(".class")) { // Is a class conflict
+					conflicts.put(content -> content.contains("\"${originalPath.getPath().replace('/', '.')}\""), // look for the path with dots and in quotes (for mixins), example: "com.example.mod.mixins"
+							Map.of("\"${originalPath.getBaseName().removeExtension()}\"", "\"${relocatedPath.getBaseName().removeExtension()}\"")); // Just the filename without the path & extension and in quotes (for mixins)
+				}
+			});
 
-            resources.parallelStream().forEach(entry -> {
-                String content = JAR.getResource(jarFile, entry);
-                for (var conflict : conflicts.entrySet()) {
-                    // TODO: Smart replace
-                    //  If a file has "com.example.Meow" and "com.example.Meow2" and we're only replacing "com.example.Meow" then only replace all instances of "com.example.Meow" but not "com.example.Meow2"
-                    if (conflict.getKey().test(content)) {
-                        for (var replacement : conflict.getValue().entrySet()) {
-                            content = content.replace(replacement.getKey(), replacement.getValue());
-                        }
-                    }
-                }
-                contentMapping.put(entry, content);
-            });
+			resources.parallelStream().forEach(entry -> {
+				String content = JAR.getResource(jarFile, entry);
 
-            doAnotherPass.set(JAR.writeResources(jarFile, contentMapping));
-            jarFile.close();
-            JAR.renameResources(jarFile.getName(), fileConflicts);
-        });
+				for (var conflict : conflicts.entrySet()) {
+					if (entry.getName().endsWith(".mixins.json") || entry.getName().endsWith(".mixin.json")) { // Handle mixin paths
+						for (var replacement : conflict.getValue().entrySet()) {
+							var gson = new GsonBuilder().setPrettyPrinting().create();
+							var mixinJson = gson.fromJson(content, JsonObject.class);
+							var packagePath = mixinJson.get("package").getAsString();
 
-        // Do a multiple passes to handle conflicts that were created by the previous pass
-        if (doAnotherPass.get()) relocateResources(relocationConfigs, true);
-    }
+							var commonMixinPaths = mixinJson.getAsJsonArray("mixins");
+							var newCommonMixinPaths = new JsonArray();
 
-    /**
-     * Sets up the mappings for conflicting files in JARs.
-     * @param relocationConfigs The relocationConfigs to process
-     * @param append Isn't a good name, but we set it to false to check if we have any new conflicts,
-     *               setting it to false will ignore previous mappings and overwrite them,
-     *               but it will still append the mappings to the tiny file
-     */
-    public static void generateMappings(List<RelocationConfig> relocationConfigs, boolean append = true) {
-        mapConflicts(relocationConfigs, append);
-        TinyClassWriter.write(relocationConfigs, tempDir);
-    }
+							var clientMixinPaths = mixinJson.getAsJsonArray("client");
+							var newClientMixinPaths = new JsonArray();
 
-    /**
-     * Maps conflicting entries to their relocated paths.
-     * @param relocationConfigs The list of relocationConfigs to process
-     * @param append Whether to append to the existing mappings
-     */
-    private static void mapConflicts(List<RelocationConfig> relocationConfigs, boolean append = true) {
-        record FileInfo(String path, byte[] hash, RelocationConfig source) { }
+							for (JsonElement mixinPath : commonMixinPaths) {
+								var fullPath = packagePath + "." + mixinPath.getAsString();
+								if (replacement.getKey().equals(fullPath))
+									newCommonMixinPaths.add(replacement.getValue().substring(packagePath.length() + 1));
+								else
+									newCommonMixinPaths.add(mixinPath);
+							}
 
-        // Map to store all relocationConfigs and their hashes grouped by path
-        Map<String, List<FileInfo>> filesByPath = new ConcurrentHashMap<>();
+							for (JsonElement mixinPath : clientMixinPaths) {
+								var fullPath = packagePath + "." + mixinPath.getAsString();
+								if (replacement.getKey().equals(fullPath))
+									newClientMixinPaths.add(replacement.getValue().substring(packagePath.length() + 1));
+								else
+									newClientMixinPaths.add(mixinPath);
+							}
 
-        // Process each JAR file in parallel
-        relocationConfigs.parallelStream().forEach(file -> {
-            var jarFile = append ? file.jarFile : new JarFile(file.jarFile.getName()); // If we're not appending, we need to reopen the JAR file
-            var entries = jarFile.entries();
-            while (entries.hasMoreElements()) {
-                var entry = entries.nextElement();
-                if (!entry.isDirectory()) {
-                    // Normalize the path to use forward slashes (JAR standard)
-                    String path = FilenameUtils.normalize(entry.getName(), true);
-                    byte[] hash = JAR.computeHash(jarFile, entry);
+							mixinJson.add("mixins", newCommonMixinPaths);
+							mixinJson.add("client", newClientMixinPaths);
 
-                    filesByPath.compute(path, (_, existing) -> {
-                        var list = existing == null ? new ArrayList<FileInfo>() : existing;
-                        // Only add if the hash is different
-                        if (list.stream().noneMatch(info -> Arrays.equals(info.hash, hash)))
-                            list.add(new FileInfo(path, hash, file));
-                        return list;
-                    });
-                }
-            }
-            if (!append) jarFile.close(); // Close the jar if we opened it
-        });
+							content = gson.toJson(mixinJson);
+						}
+					} else {
+						// TODO: Smart replace
+						//  If a file has "com.example.Meow" and "com.example.Meow2" and we're only replacing "com.example.Meow" then only replace all instances of "com.example.Meow" but not "com.example.Meow2"
+						if (conflict.getKey().test(content)) {
+							for (var replacement : conflict.getValue().entrySet()) {
+								content = content.replace(replacement.getKey(), replacement.getValue());
+							}
+						}
+					}
 
-        if (!append) { // remove all mappings from the relocation configs as we're not appending
-            relocationConfigs.forEach(config -> config.setMappings(new HashMap<>()));
-        }
+					if (entry.getName().endsWith(".mixins.json") || entry.getName().endsWith(".mixin.json")) {
+						System.out.println(content);
+					}
 
-        // Create mappings for conflicts
-        filesByPath.forEach((_, fileInfos) -> {
-            // Return if there are no conflicts
-            if (fileInfos.size() <= 1) return;
+					contentMapping.put(entry, content);
+				}
+			});
 
-            // Create mappings for all relocationConfigs
-            fileInfos.forEach(fileInfo ->
-                fileInfo.source.mappings.putIfAbsent(fileInfo.path, fileInfo.path.addPrefixExtension(fileInfo.source.conflictPrefix))
-            );
-        });
-    }
+			doAnotherPass.set(JAR.writeResources(jarFile, contentMapping));
+			jarFile.close();
+			JAR.renameResources(jarFile.getName(), fileConflicts);
+		});
+
+		// Do a multiple passes to handle conflicts that were created by the previous pass
+		if (doAnotherPass.get()) relocateResources(relocationConfigs, true);
+	}
+
+	/**
+	 * Sets up the mappings for conflicting files in JARs.
+	 *
+	 * @param relocationConfigs The relocationConfigs to process
+	 * @param append            Isn't a good name, but we set it to false to check if we have any new conflicts,
+	 *                          setting it to false will ignore previous mappings and overwrite them,
+	 *                          but it will still append the mappings to the tiny file
+	 */
+	public static void generateMappings(List<RelocationConfig> relocationConfigs, boolean append=true) {
+		mapConflicts(relocationConfigs, append);
+		TinyClassWriter.write(relocationConfigs, tempDir);
+	}
+
+	/**
+	 * Maps conflicting entries to their relocated paths.
+	 *
+	 * @param relocationConfigs The list of relocationConfigs to process
+	 * @param append            Whether to append to the existing mappings
+	 */
+	private static void mapConflicts(List<RelocationConfig> relocationConfigs, boolean append=true) {
+		record FileInfo(String path, byte[] hash, RelocationConfig source) {
+		}
+
+		// Map to store all relocationConfigs and their hashes grouped by path
+		Map<String, List<FileInfo>> filesByPath = new ConcurrentHashMap<>();
+
+		// Process each JAR file in parallel
+		relocationConfigs.parallelStream().forEach(file -> {
+			var jarFile = append ? file.jarFile : new JarFile(file.jarFile.getName()); // If we're not appending, we need to reopen the JAR file
+			var entries = jarFile.entries();
+			while (entries.hasMoreElements()) {
+				var entry = entries.nextElement();
+				if (!entry.isDirectory()) {
+					// Normalize the path to use forward slashes (JAR standard)
+					String path = FilenameUtils.normalize(entry.getName(), true);
+					byte[] hash = JAR.computeHash(jarFile, entry);
+
+					filesByPath.compute(path, (_, existing) -> {
+						var list = existing == null ? new ArrayList<FileInfo>() : existing;
+						// Only add if the hash is different
+						if (list.stream().noneMatch(info -> Arrays.equals(info.hash, hash)))
+							list.add(new FileInfo(path, hash, file));
+						return list;
+					});
+				}
+			}
+			if (!append) jarFile.close(); // Close the jar if we opened it
+		});
+
+		if (!append) { // remove all mappings from the relocation configs as we're not appending
+			relocationConfigs.forEach(config -> config.setMappings(new HashMap<>()));
+		}
+
+		// Create mappings for conflicts
+		filesByPath.forEach((_, fileInfos) -> {
+			// Return if there are no conflicts
+			if (fileInfos.size() <= 1) return;
+
+			// Create mappings for all relocationConfigs
+			fileInfos.forEach(fileInfo ->
+					fileInfo.source.mappings.putIfAbsent(fileInfo.path, fileInfo.path.addPrefixExtension(fileInfo.source.conflictPrefix))
+			);
+		});
+	}
 }
