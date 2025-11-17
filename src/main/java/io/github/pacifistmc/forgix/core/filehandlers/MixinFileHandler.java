@@ -39,12 +39,18 @@ public class MixinFileHandler implements CustomFileHandler {
 
         JsonPrimitive mixinPlugin = mixinJson.getAsJsonPrimitive("plugin");
         if (mixinPlugin != null) {
-            mixinJson.addProperty("plugin", replacementPaths.get(mixinPlugin.getAsString()));
+            if (replacementPaths.containsKey(mixinPlugin.getAsString()))
+                mixinJson.addProperty("plugin", replacementPaths.get(mixinPlugin.getAsString()));
+            else
+                mixinJson.addProperty("plugin", mixinPlugin.getAsString());
         }
 
         JsonPrimitive mixinRef = mixinJson.getAsJsonPrimitive("refmap");
         if (mixinRef != null) {
-            mixinJson.addProperty("refmap", replacementPaths.get(mixinRef.getAsString()));
+            if (replacementPaths.containsKey(mixinRef.getAsString()))
+                mixinJson.addProperty("refmap", replacementPaths.get(mixinRef.getAsString()));
+            else
+                mixinJson.addProperty("refmap", mixinRef.getAsString());
         }
 
         return gson.toJson(mixinJson);
