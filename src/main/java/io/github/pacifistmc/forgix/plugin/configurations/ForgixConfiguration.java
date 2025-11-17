@@ -333,8 +333,8 @@ public class ForgixConfiguration {
 
     // Custom file handling stuff
 
-    public void mixinHandler(String mixinNamePattern) {
-        fileHandler(mixinNamePattern, new MixinFileHandler());
+    public void mixin(String mixinPathPattern) {
+        fileHandler(mixinPathPattern, new MixinFileHandler());
     }
 
     public void fileHandler(String fileNamePattern, CustomFileHandler handler) {
