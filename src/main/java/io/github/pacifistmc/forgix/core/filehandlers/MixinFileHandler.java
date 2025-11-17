@@ -12,15 +12,17 @@ public class MixinFileHandler implements CustomFileHandler {
         String packagePath = mixinJson.get("package").getAsString();
 
         JsonArray commonMixinPaths = mixinJson.getAsJsonArray("mixins");
-        JsonArray newCommonMixinPaths = new JsonArray();
-        for (JsonElement mixinPath : commonMixinPaths) {
-            String fullPath = packagePath + "." + mixinPath.getAsString();
-            if (replacementPaths.containsKey(fullPath))
-                newCommonMixinPaths.add(replacementPaths.get(fullPath).substring(packagePath.length() + 1));
-            else
-                newCommonMixinPaths.add(mixinPath);
+        if (commonMixinPaths != null) {
+            JsonArray newCommonMixinPaths = new JsonArray();
+            for (JsonElement mixinPath : commonMixinPaths) {
+                String fullPath = packagePath + "." + mixinPath.getAsString();
+                if (replacementPaths.containsKey(fullPath))
+                    newCommonMixinPaths.add(replacementPaths.get(fullPath).substring(packagePath.length() + 1));
+                else
+                    newCommonMixinPaths.add(mixinPath);
+            }
+            mixinJson.add("mixins", newCommonMixinPaths);
         }
-        mixinJson.add("mixins", newCommonMixinPaths);
 
         JsonArray clientMixinPaths = mixinJson.getAsJsonArray("client");
         JsonArray newClientMixinPaths = new JsonArray();
