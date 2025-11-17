@@ -1,6 +1,6 @@
 package io.github.pacifistmc.forgix.core;
 
-import com.google.gson.*;
+import io.github.pacifistmc.forgix.plugin.configurations.ForgixConfiguration;
 import io.github.pacifistmc.forgix.utils.JAR;
 import io.github.pacifistmc.forgix.utils.TinyClassWriter;
 import net.fabricmc.tinyremapper.*;
@@ -8,10 +8,7 @@ import net.fabricmc.tinyremapper.api.TrLogger;
 import org.apache.commons.io.FilenameUtils;
 
 import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -30,13 +27,14 @@ public class Relocator {
 	}
 
 	/**
-	 * Relocates conflicting files in JARs.
-	 *
-	 * @param relocationConfigs The relocationConfigs to process
-	 */
-	public static void relocate(List<RelocationConfig> relocationConfigs) {
+     * Relocates conflicting files in JARs.
+     *
+     * @param relocationConfigs  The relocationConfigs to process
+     * @param customFileHandlers
+     */
+	public static void relocate(List<RelocationConfig> relocationConfigs, Map<String, ForgixConfiguration.CustomFileHandler> customFileHandlers) {
 		relocateClasses(relocationConfigs);
-		relocateResources(relocationConfigs);
+		relocateResources(relocationConfigs, customFileHandlers);
 	}
 
 	/**
@@ -123,7 +121,7 @@ public class Relocator {
 	 *
 	 * @param relocationConfigs The relocationConfigs to process
 	 */
-	public static void relocateResources(List<RelocationConfig> relocationConfigs, boolean anotherPass=false) {
+	public static void relocateResources(List<RelocationConfig> relocationConfigs, Map<String, ForgixConfiguration.CustomFileHandler> customFileHandlers, boolean anotherPass=false) {
 		// Generate mappings if they don't exist or this is another pass
 		if (anotherPass || relocationConfigs.getFirst().tinyFile == null) generateMappings(relocationConfigs, !anotherPass);
 
@@ -164,53 +162,26 @@ public class Relocator {
 
 			resources.parallelStream().forEach(entry -> {
 				String content = JAR.getResource(jarFile, entry);
+				// Get the custom handler for this file if the name fits a pattern
+				ForgixConfiguration.CustomFileHandler handler = customFileHandlers.entrySet()
+						.stream()
+						.filter(entry1 -> {
+							var matcher = FileSystems.getDefault().getPathMatcher("glob:${entry1.key}");
+							return matcher.matches(Paths.get(entry.getName()));
+						})
+						.findFirst()
+						.map(Map.Entry::getValue)
+						.orElse(null);
 
 				for (var conflict : conflicts.entrySet()) {
-					if (entry.getName().endsWith(".mixins.json") || entry.getName().endsWith(".mixin.json")) { // Handle mixin paths
-						for (var replacement : conflict.getValue().entrySet()) {
-							var gson = new GsonBuilder().setPrettyPrinting().create();
-							var mixinJson = gson.fromJson(content, JsonObject.class);
-							var packagePath = mixinJson.get("package").getAsString();
-
-							var commonMixinPaths = mixinJson.getAsJsonArray("mixins");
-							var newCommonMixinPaths = new JsonArray();
-
-							var clientMixinPaths = mixinJson.getAsJsonArray("client");
-							var newClientMixinPaths = new JsonArray();
-
-							for (JsonElement mixinPath : commonMixinPaths) {
-								var fullPath = packagePath + "." + mixinPath.getAsString();
-								if (replacement.getKey().equals(fullPath))
-									newCommonMixinPaths.add(replacement.getValue().substring(packagePath.length() + 1));
-								else
-									newCommonMixinPaths.add(mixinPath);
-							}
-
-							for (JsonElement mixinPath : clientMixinPaths) {
-								var fullPath = packagePath + "." + mixinPath.getAsString();
-								if (replacement.getKey().equals(fullPath))
-									newClientMixinPaths.add(replacement.getValue().substring(packagePath.length() + 1));
-								else
-									newClientMixinPaths.add(mixinPath);
-							}
-
-							mixinJson.add("mixins", newCommonMixinPaths);
-							mixinJson.add("client", newClientMixinPaths);
-
-							content = gson.toJson(mixinJson);
-						}
-					} else {
+					if (handler != null) { // If there's a custom handler for this file, use it to handle the conflicts
+						content = handler.handle(entry.getName(), content, conflict.value);
+					} else if (conflict.getKey().test(content)) {
 						// TODO: Smart replace
 						//  If a file has "com.example.Meow" and "com.example.Meow2" and we're only replacing "com.example.Meow" then only replace all instances of "com.example.Meow" but not "com.example.Meow2"
-						if (conflict.getKey().test(content)) {
-							for (var replacement : conflict.getValue().entrySet()) {
-								content = content.replace(replacement.getKey(), replacement.getValue());
-							}
+						for (var replacement : conflict.getValue().entrySet()) {
+							content = content.replace(replacement.getKey(), replacement.getValue());
 						}
-					}
-
-					if (entry.getName().endsWith(".mixins.json") || entry.getName().endsWith(".mixin.json")) {
-						System.out.println(content);
 					}
 
 					contentMapping.put(entry, content);
@@ -223,7 +194,7 @@ public class Relocator {
 		});
 
 		// Do a multiple passes to handle conflicts that were created by the previous pass
-		if (doAnotherPass.get()) relocateResources(relocationConfigs, true);
+		if (doAnotherPass.get()) relocateResources(relocationConfigs, customFileHandlers, true);
 	}
 
 	/**

@@ -1,5 +1,7 @@
 package io.github.pacifistmc.forgix.plugin.configurations;
 
+import com.google.gson.*;
+import io.github.pacifistmc.forgix.core.filehandlers.MixinFileHandler;
 import org.gradle.api.Action;
 import org.gradle.api.Project;
 import org.gradle.api.file.Directory;
@@ -22,6 +24,7 @@ public class ForgixConfiguration {
     private final Property<Directory> destinationDirectory;
     private final Map<String, MergeLoaderConfiguration> mergeConfigurations = new HashMap<>();
     public MultiversionConfiguration multiversionConfiguration;
+    private final Map<String, CustomFileHandler> customFileHandlers = new HashMap<>();
 
     private final Map<String, Consumer<ForgixConfiguration>> LOADER_DEFAULT_METHOD_MAP = new HashMap<>();
     private final Project rootProject;
@@ -325,6 +328,25 @@ public class ForgixConfiguration {
         public Property<FileCollection> getInputJars() {
             return inputJars;
         }
+    }
+
+    // Custom file handling stuff
+
+    public void mixinHandler(String mixinNamePattern) {
+        fileHandler(mixinNamePattern, new MixinFileHandler());
+    }
+
+    public void fileHandler(String fileNamePattern, CustomFileHandler handler) {
+        customFileHandlers.put(fileNamePattern, handler);
+    }
+
+    public Map<String, CustomFileHandler> getCustomFileHandlers() {
+        return customFileHandlers;
+    }
+
+    @FunctionalInterface
+    public interface CustomFileHandler {
+        String handle(String fileName, String fileContent, Map<String, String> replacementPaths);
     }
 
     // Internal Gradle stuff

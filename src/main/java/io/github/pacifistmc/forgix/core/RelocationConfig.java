@@ -1,5 +1,7 @@
 package io.github.pacifistmc.forgix.core;
 
+import io.github.pacifistmc.forgix.plugin.configurations.ForgixConfiguration;
+
 import java.io.File;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;

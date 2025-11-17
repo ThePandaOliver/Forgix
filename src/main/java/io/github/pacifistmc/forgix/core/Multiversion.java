@@ -48,7 +48,7 @@ public class Multiversion {
 
             var relocationConfig = new RelocationConfig(jarFile, uuid);
             relocationConfig.setMappings(renameMap);
-            Relocator.relocate(List.of(relocationConfig));
+            Relocator.relocate(List.of(relocationConfig), Map.of());
         }
 
         JAR.removeFiles(multiversionJar, List.of(

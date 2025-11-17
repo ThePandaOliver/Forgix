@@ -3,8 +3,11 @@ package io.github.pacifistmc.forgix.tests;
 import io.github.pacifistmc.forgix.Forgix;
 import io.github.pacifistmc.forgix.core.Multiversion;
 import io.github.pacifistmc.forgix.core.Relocator;
+import io.github.pacifistmc.forgix.core.filehandlers.MixinFileHandler;
 import io.github.pacifistmc.forgix.utils.JAR;
 import io.github.pacifistmc.forgix.utils.TinyClassWriter;
+import org.apache.commons.io.IOUtils;
+import org.gradle.internal.impldep.org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,13 +16,16 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.zip.ZipEntry;
 
 import org.apache.commons.io.FileUtils;
 
@@ -184,7 +190,7 @@ public class CoreTest {
                     new RelocationConfig(differentJarA, "diffA"),
                     new RelocationConfig(differentJarB, "diffB")
             ));
-            Relocator.relocate(files);
+            Relocator.relocate(files, Map.of());
             var differentJarA1 = new JarFile(differentJarACopy);
             var differentJarB1 = new JarFile(differentJarBCopy);
 
@@ -242,7 +248,7 @@ public class CoreTest {
                     new RelocationConfig(mergeJarA, "diffA"),
                     new RelocationConfig(mergeJarB, "diffB")
             ));
-            Relocator.relocate(files);
+            Relocator.relocate(files, Map.of());
             try (var baos = JAR.combineJars(List.of(mergeJarACopy, mergeJarBCopy))) {
                 try (var fos = new FileOutputStream(mergedJar)) {
                     baos.writeTo(fos);
@@ -304,6 +310,106 @@ public class CoreTest {
 
             assertTrue(mergedEntries.containsAll(getJarEntries(mergeJarA)), "Merged JAR should contain all entries from JAR A");
             assertTrue(mergedEntries.containsAll(getJarEntries(mergeJarB)), "Merged JAR should contain all entries from JAR B");
+        }
+    }
+
+    @Test
+    void testCustomFileHandling() throws IOException {
+        File differentJarACopy = tempDir.resolve("conflict-a.jar").toFile();
+        File differentJarBCopy = tempDir.resolve("conflict-b.jar").toFile();
+        FileUtils.copyFile(differentJarA, differentJarACopy);
+        FileUtils.copyFile(differentJarB, differentJarBCopy);
+
+        // Relocate & merge
+        try(JarFile differentJarA = new JarFile(differentJarACopy);
+            JarFile differentJarB = new JarFile(differentJarBCopy)) {
+
+            List<RelocationConfig> files = new ArrayList<>(List.of(
+                    new RelocationConfig(differentJarA, "diffA"),
+                    new RelocationConfig(differentJarB, "diffB")
+            ));
+            Relocator.relocate(files, Map.of("**.mixins.json", new MixinFileHandler()));
+        }
+
+        // Verify the merged JAR mixins
+        try (JarFile differentJarA = new JarFile(differentJarACopy);
+             JarFile differentJarB = new JarFile(differentJarBCopy)) {
+            ZipEntry mixinEntryA = differentJarA.getEntry("DistantHorizons.fabric.mixins_diffA.json");
+            try (InputStream is = differentJarA.getInputStream(mixinEntryA)) {
+                String content = IOUtils.toString(is, StandardCharsets.UTF_8);
+                if (debug) {
+                    content.println();
+                }
+                Assert.assertEquals(content, """
+                        {
+                          "required": true,
+                          "minVersion": "0.8",
+                          "package": "com.seibel.distanthorizons.fabric.mixins",
+                          "mixins": [
+                            "server.MixinChunkGenerator_diffA",
+                            "server.MixinChunkMap_diffA",
+                            "server.MixinEntity_diffA",
+                            "server.MixinServerPlayer_diffA",
+                            "server.MixinTracingExecutor_diffA",
+                            "server.MixinUtilBackgroundThread_diffA"
+                          ],
+                          "client": [
+                            "client.MixinClientLevel_diffA",
+                            "client.MixinClientPacketListener_diffA",
+                            "client.MixinDebugScreenOverlay_diffA",
+                            "client.MixinFogRenderer_diffA",
+                            "client.MixinLevelRenderer_diffA",
+                            "client.MixinLightTexture_diffA",
+                            "client.MixinMinecraft_diffA",
+                            "client.MixinOptionsScreen_diffA",
+                            "client.MixinTextureUtil_diffA"
+                          ],
+                          "server": [],
+                          "injectors": {
+                            "defaultRequire": 1
+                          },
+                          "plugin": "com.seibel.distanthorizons.fabric.mixins.FabricMixinPlugin",
+                          "refmap": "DistantHorizons-fabric-refmap.json"
+                        }""".stripIndent());
+            }
+
+            ZipEntry mixinEntryB = differentJarB.getEntry("DistantHorizons.fabric.mixins_diffB.json");
+            try (InputStream is = differentJarB.getInputStream(mixinEntryB)) {
+                String content = IOUtils.toString(is, StandardCharsets.UTF_8);
+                if (debug) {
+                    content.println();
+                }
+                Assert.assertEquals(content, """
+                        {
+                          "required": true,
+                          "minVersion": "0.8",
+                          "package": "com.seibel.distanthorizons.fabric.mixins",
+                          "mixins": [
+                            "server.MixinChunkGenerator_diffB",
+                            "server.MixinChunkMap_diffB",
+                            "server.MixinEntity_diffB",
+                            "server.MixinServerPlayer_diffB",
+                            "server.MixinTracingExecutor_diffB",
+                            "server.MixinUtilBackgroundThread_diffB"
+                          ],
+                          "client": [
+                            "client.MixinClientLevel_diffB",
+                            "client.MixinClientPacketListener_diffB",
+                            "client.MixinDebugScreenOverlay_diffB",
+                            "client.MixinFogRenderer_diffB",
+                            "client.MixinLevelRenderer_diffB",
+                            "client.MixinLightTexture_diffB",
+                            "client.MixinMinecraft_diffB",
+                            "client.MixinOptionsScreen_diffB",
+                            "client.MixinTextureUtil_diffB"
+                          ],
+                          "injectors": {
+                            "defaultRequire": 1
+                          },
+                          "plugin": "com.seibel.distanthorizons.fabric.mixins.FabricMixinPlugin",
+                          "refmap": "DistantHorizons-fabric-refmap.json"
+                        }""".stripIndent());
+            }
         }
     }
 

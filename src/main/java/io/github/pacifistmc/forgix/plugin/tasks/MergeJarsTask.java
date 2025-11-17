@@ -74,7 +74,7 @@ public abstract class MergeJarsTask extends Jar {
         }
 
         // Perform the merge operation
-        Forgix.mergeLoaders(jarMap, outputFile, silence.get());
+        Forgix.mergeLoaders(jarMap, outputFile, settings.customFileHandlers, silence.get());
     }
 
     @Override
