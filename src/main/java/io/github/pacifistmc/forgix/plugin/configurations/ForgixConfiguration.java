@@ -1,6 +1,7 @@
 package io.github.pacifistmc.forgix.plugin.configurations;
 
 import com.google.gson.*;
+import io.github.pacifistmc.forgix.core.filehandlers.CustomFileHandler;
 import io.github.pacifistmc.forgix.core.filehandlers.MixinFileHandler;
 import org.gradle.api.Action;
 import org.gradle.api.Project;
@@ -342,11 +343,6 @@ public class ForgixConfiguration {
 
     public Map<String, CustomFileHandler> getCustomFileHandlers() {
         return customFileHandlers;
-    }
-
-    @FunctionalInterface
-    public interface CustomFileHandler {
-        String handle(String fileName, String fileContent, Map<String, String> replacementPaths);
     }
 
     // Internal Gradle stuff

@@ -1,11 +1,10 @@
 package io.github.pacifistmc.forgix.core.filehandlers;
 
 import com.google.gson.*;
-import io.github.pacifistmc.forgix.plugin.configurations.ForgixConfiguration;
 
 import java.util.Map;
 
-public class MixinFileHandler implements ForgixConfiguration.CustomFileHandler {
+public class MixinFileHandler implements CustomFileHandler {
     @Override
     public String handle(String fileName, String fileContent, Map<String, String> replacementPaths) {
         Gson gson = new GsonBuilder().setPrettyPrinting().create();

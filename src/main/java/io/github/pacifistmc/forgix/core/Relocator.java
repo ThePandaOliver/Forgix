@@ -1,5 +1,6 @@
 package io.github.pacifistmc.forgix.core;
 
+import io.github.pacifistmc.forgix.core.filehandlers.CustomFileHandler;
 import io.github.pacifistmc.forgix.plugin.configurations.ForgixConfiguration;
 import io.github.pacifistmc.forgix.utils.JAR;
 import io.github.pacifistmc.forgix.utils.TinyClassWriter;
@@ -32,7 +33,7 @@ public class Relocator {
      * @param relocationConfigs  The relocationConfigs to process
      * @param customFileHandlers
      */
-	public static void relocate(List<RelocationConfig> relocationConfigs, Map<String, ForgixConfiguration.CustomFileHandler> customFileHandlers) {
+	public static void relocate(List<RelocationConfig> relocationConfigs, Map<String, CustomFileHandler> customFileHandlers) {
 		relocateClasses(relocationConfigs);
 		relocateResources(relocationConfigs, customFileHandlers);
 	}
@@ -121,7 +122,7 @@ public class Relocator {
 	 *
 	 * @param relocationConfigs The relocationConfigs to process
 	 */
-	public static void relocateResources(List<RelocationConfig> relocationConfigs, Map<String, ForgixConfiguration.CustomFileHandler> customFileHandlers, boolean anotherPass=false) {
+	public static void relocateResources(List<RelocationConfig> relocationConfigs, Map<String, CustomFileHandler> customFileHandlers, boolean anotherPass=false) {
 		// Generate mappings if they don't exist or this is another pass
 		if (anotherPass || relocationConfigs.getFirst().tinyFile == null) generateMappings(relocationConfigs, !anotherPass);
 
@@ -163,7 +164,7 @@ public class Relocator {
 			resources.parallelStream().forEach(entry -> {
 				String content = JAR.getResource(jarFile, entry);
 				// Get the custom handler for this file if the name fits a pattern
-				ForgixConfiguration.CustomFileHandler handler = customFileHandlers.entrySet()
+				CustomFileHandler handler = customFileHandlers.entrySet()
 						.stream()
 						.filter(entry1 -> {
 							var matcher = FileSystems.getDefault().getPathMatcher("glob:${entry1.key}");

@@ -3,6 +3,7 @@ package io.github.pacifistmc.forgix;
 import io.github.pacifistmc.forgix.core.Multiversion;
 import io.github.pacifistmc.forgix.core.RelocationConfig;
 import io.github.pacifistmc.forgix.core.Relocator;
+import io.github.pacifistmc.forgix.core.filehandlers.CustomFileHandler;
 import io.github.pacifistmc.forgix.plugin.configurations.ForgixConfiguration;
 import io.github.pacifistmc.forgix.utils.JAR;
 
@@ -14,12 +15,12 @@ import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 
 public class Forgix {
-    public static final String VERSION = "2.0.0-fork.11";
+    public static final String VERSION = "2.0.0-SNAPSHOT.5.1";
     private static final String MANIFEST_VERSION_KEY = "Forgix-Version";
     private static final String MANIFEST_MAPPINGS_KEY = "Forgix-Mappings";
 
     public static void mergeLoaders(Map<File, String> jarsAndLoadersMap, File outputFile,
-                                    Map<String, ForgixConfiguration.CustomFileHandler> customFileHandlers = new HashMap(),
+                                    Map<String, CustomFileHandler> customFileHandlers = new HashMap(),
                                     boolean silence = false) {
         if (!silence) {
             """
