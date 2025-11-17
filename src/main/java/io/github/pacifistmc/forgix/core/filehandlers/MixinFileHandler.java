@@ -25,18 +25,27 @@ public class MixinFileHandler implements CustomFileHandler {
         }
 
         JsonArray clientMixinPaths = mixinJson.getAsJsonArray("client");
-        JsonArray newClientMixinPaths = new JsonArray();
-        for (JsonElement mixinPath : clientMixinPaths) {
-            String fullPath = packagePath + "." + mixinPath.getAsString();
-            if (replacementPaths.containsKey(fullPath))
-                newClientMixinPaths.add(replacementPaths.get(fullPath).substring(packagePath.length() + 1));
-            else
-                newClientMixinPaths.add(mixinPath);
+        if (clientMixinPaths != null) {
+            JsonArray newClientMixinPaths = new JsonArray();
+            for (JsonElement mixinPath : clientMixinPaths) {
+                String fullPath = packagePath + "." + mixinPath.getAsString();
+                if (replacementPaths.containsKey(fullPath))
+                    newClientMixinPaths.add(replacementPaths.get(fullPath).substring(packagePath.length() + 1));
+                else
+                    newClientMixinPaths.add(mixinPath);
+            }
+            mixinJson.add("client", newClientMixinPaths);
         }
-        mixinJson.add("client", newClientMixinPaths);
 
         JsonPrimitive mixinPlugin = mixinJson.getAsJsonPrimitive("plugin");
+        if (mixinPlugin != null) {
+            mixinJson.addProperty("plugin", replacementPaths.get(mixinPlugin.getAsString()));
+        }
+
         JsonPrimitive mixinRef = mixinJson.getAsJsonPrimitive("refmap");
+        if (mixinRef != null) {
+            mixinJson.addProperty("refmap", replacementPaths.get(mixinRef.getAsString()));
+        }
 
         return gson.toJson(mixinJson);
     }
