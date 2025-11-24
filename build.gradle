@@ -113,6 +113,26 @@ publishing {
             name = 'localPluginRepository'
             url = '../local-plugin-repository'
         }
+
+        maven {
+            url = "https://repo.pandasystems.dev/repository/maven-snapshots/"
+            name = "PandasSnapshotRepository"
+            credentials {
+                username = System.getenv("NEXUS_USERNAME")
+                password = System.getenv("NEXUS_PASSWORD")
+            }
+        }
+
+        if (!version.toString().endsWith("SNAPSHOT")) {
+            maven {
+                url = "https://repo.pandasystems.dev/repository/maven-releases/"
+                name = "PandasReleaseRepository"
+                credentials {
+                    username = System.getenv("NEXUS_USERNAME")
+                    password = System.getenv("NEXUS_PASSWORD")
+                }
+            }
+        }
     }
 }
 
