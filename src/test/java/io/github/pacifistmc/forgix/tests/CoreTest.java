@@ -368,7 +368,7 @@ public class CoreTest {
                           "injectors": {
                             "defaultRequire": 1
                           },
-                          "plugin": "com.seibel.distanthorizons.fabric.mixins.FabricMixinPlugin",
+                          "plugin": "com.seibel.distanthorizons.fabric.mixins.FabricMixinPlugin_diffA",
                           "refmap": "DistantHorizons-fabric-refmap.json"
                         }""".stripIndent());
             }
@@ -406,7 +406,7 @@ public class CoreTest {
                           "injectors": {
                             "defaultRequire": 1
                           },
-                          "plugin": "com.seibel.distanthorizons.fabric.mixins.FabricMixinPlugin",
+                          "plugin": "com.seibel.distanthorizons.fabric.mixins.FabricMixinPlugin_diffB",
                           "refmap": "DistantHorizons-fabric-refmap.json"
                         }""".stripIndent());
             }

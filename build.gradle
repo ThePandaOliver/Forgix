@@ -110,6 +110,11 @@ pluginBundle {
 publishing {
     repositories {
         maven {
+            name = 'localPluginRepository'
+            url = '../local-plugin-repository'
+        }
+
+        maven {
             url = "https://repo.pandasystems.dev/repository/maven-snapshots/"
             name = "PandasSnapshotRepository"
             credentials {
